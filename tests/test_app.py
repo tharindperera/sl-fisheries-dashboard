@@ -78,16 +78,13 @@ def test_combined_timeline_spans_history_to_forecast():
     assert "galle" in combined.site_id.values
 
 
-def test_theme_mode_dark_selection(monkeypatch):
+def test_download_whole_dataset_button(monkeypatch):
     monkeypatch.setenv("DASHBOARD_DEFAULT_MODE", "demo")
     app = AppTest.from_file(str(Path(__file__).parents[1] / "app.py"), default_timeout=60).run()
     assert not app.exception
-    for radio in app.radio:
-        if radio.label == "Theme":
-            radio.set_value("Dark")
-            break
-    app.run()
-    assert not app.exception
+    buttons = [btn for btn in app.download_button if "entire dataset" in btn.label.lower()]
+    assert len(buttons) >= 3
+
 
 
 def test_coastal_location_dropdown_selection(monkeypatch):

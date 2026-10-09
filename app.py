@@ -45,68 +45,6 @@ COLORS = {"Higher values": [203, 69, 60, 230], "Elevated values": [221, 161, 54,
 FULL_WIDTH = {"use_container_width": True} if "use_container_width" in inspect.signature(st.button).parameters else {"width": "stretch"}
 
 
-def apply_theme_css(is_dark):
-    if is_dark:
-        st.markdown(
-            """
-            <style>
-            .stApp {
-                background-color: #0c1322 !important;
-                color: #f1f5f9 !important;
-            }
-            section[data-testid="stSidebar"] {
-                background-color: #070d18 !important;
-                border-right: 1px solid #1e293b !important;
-            }
-            div[data-testid="stMetricValue"] {
-                color: #38bdf8 !important;
-            }
-            div[data-testid="stMetricLabel"] {
-                color: #94a3b8 !important;
-            }
-            div[data-testid="stExpander"] {
-                background-color: #111a2e !important;
-                border: 1px solid #1e293b !important;
-                border-radius: 8px;
-            }
-            div[data-testid="stDataFrame"] {
-                background-color: #111a2e !important;
-            }
-            button[data-baseweb="tab"] {
-                color: #94a3b8 !important;
-            }
-            button[data-baseweb="tab"][aria-selected="true"] {
-                color: #38bdf8 !important;
-                border-bottom-color: #38bdf8 !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            """
-            <style>
-            .stApp {
-                background-color: #f8fafc !important;
-                color: #0f172a !important;
-            }
-            section[data-testid="stSidebar"] {
-                background-color: #f1f5f9 !important;
-                border-right: 1px solid #e2e8f0 !important;
-            }
-            div[data-testid="stMetricValue"] {
-                color: #007F7A !important;
-            }
-            div[data-testid="stMetricLabel"] {
-                color: #475569 !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
 def build_combined_timeline(history, forecasts):
     """Combine past historical records with deduplicated latest forecasts for a seamless timeline."""
     if forecasts.empty:
@@ -225,7 +163,7 @@ def map_selected():
             return
 
 
-def render_map(sites, forecasts, history, target_day, wave, wind, is_dark=False, layer_style="Combined (Heatmap + Markers)"):
+def render_map(sites, forecasts, history, target_day, wave, wind):
     chosen = forecasts[forecasts.date_local.eq(pd.Timestamp(target_day))].copy() if not forecasts.empty else forecasts
     if not chosen.empty:
         chosen = chosen.sort_values("forecast_vintage").drop_duplicates("site_id", keep="last")
@@ -242,30 +180,6 @@ def render_map(sites, forecasts, history, target_day, wave, wind, is_dark=False,
     focus = st.session_state.get("focus_site", "beruwala")
     arc = points[points.site_id.eq(focus)]
 
-    # Heatmap indicating sampling point density and coastal monitoring footprint
-    heat_records = []
-    for _, row in points.iterrows():
-        heat_records.append({"lon": float(row["lon_land"]), "lat": float(row["lat_land"]), "weight": 1.5})
-        heat_records.append({"lon": float(row["lon_sea"]), "lat": float(row["lat_sea"]), "weight": 1.5})
-    heat_df = pd.DataFrame(heat_records)
-
-    heat_layer = pdk.Layer(
-        "HeatmapLayer",
-        id="location-heat",
-        data=heat_df,
-        get_position="[lon, lat]",
-        get_weight="weight",
-        radius_pixels=65,
-        intensity=1.6,
-        threshold=0.03,
-        color_range=[
-            [0, 127, 122, 100],   # Emerald / Teal
-            [46, 170, 150, 150],  # Cyan
-            [221, 161, 54, 200],  # Amber
-            [235, 120, 60, 230],  # Orange
-            [203, 69, 60, 255],   # Coral Red
-        ],
-    )
     land_layer = pdk.Layer(
         "ScatterplotLayer", id="land-points", data=points, get_position="[lon_land, lat_land]",
         get_fill_color="color", get_radius=4200, radius_min_pixels=6, radius_max_pixels=15,
@@ -282,17 +196,12 @@ def render_map(sites, forecasts, history, target_day, wave, wind, is_dark=False,
         get_source_color=[0, 127, 122], get_target_color=[75, 125, 165], get_width=3
     )
 
-    if layer_style == "Location heatmap only":
-        layers = [heat_layer, arc_layer]
-    elif layer_style == "Sampling markers only":
-        layers = [land_layer, sea_layer, arc_layer]
-    else:  # Combined
-        layers = [heat_layer, land_layer, sea_layer, arc_layer]
+    layers = [land_layer, sea_layer, arc_layer]
 
     deck = pdk.Deck(
         layers=layers,
         map_provider="carto",
-        map_style="dark" if is_dark else "light",
+        map_style="light",
         initial_view_state=pdk.ViewState(latitude=7.75, longitude=80.65, zoom=6.4),
         tooltip={"text": "{name}\n{site_id}\n{status}"}
     )
@@ -309,25 +218,64 @@ def render_map(sites, forecasts, history, target_day, wave, wind, is_dark=False,
     if "on_select" in params:
         map_kwargs.update({"on_select": map_selected, "selection_mode": "single-object"})
     st.pydeck_chart(deck, **map_kwargs)
-    st.caption("Click a land/sea point or choose from the dropdown above to focus on a harbour. Heatmap layer visualizes coastal sampling coverage across Sri Lanka.")
+    st.caption("Click a land or sea point or choose from the dropdown above to focus on a harbour. Land markers: teal below display thresholds; amber elevated; red higher; grey missing. Blue points are offshore samples.")
 
 
-def plot_series(frame, metric, start, end, monthly=False, label=None, template="plotly_white"):
+def plot_series(hist_frame, fc_frame, metric, start, end, label=None):
     name, unit = LABELS[metric]
-    index = pd.date_range(start, end, freq="MS" if monthly else "D")
-    if monthly:
-        values = frame.set_index("date_local")[metric].resample("MS")
-        series = values.sum(min_count=1) if metric == "precipitation_sum" else values.mean()
-        name += " (monthly sum)" if metric == "precipitation_sum" else " (monthly mean of daily values)"
-    else:
-        series = frame.set_index("date_local")[metric]
-    series = series.reindex(index)
-    color = "#38bdf8" if template == "plotly_dark" else "#007F7A"
-    fig = go.Figure(go.Scatter(x=series.index, y=series, mode="lines", connectgaps=False,
-                              line={"color": color, "width": 2.5}, name=name))
-    fig.update_layout(title=label or name, yaxis_title=unit, xaxis_title=None, height=320,
-                      margin={"l": 10, "r": 10, "t": 45, "b": 10}, template=template,
-                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    color_hist = "#007F7A"
+    color_fc = "#EF4444"  # Vibrant Red line for forecast values
+
+    # Historical daily series
+    hist_indexed = pd.Series(dtype=float)
+    if not hist_frame.empty and metric in hist_frame and "date_local" in hist_frame:
+        sub = hist_frame[hist_frame.date_local.between(pd.Timestamp(start), pd.Timestamp(end))]
+        if not sub.empty:
+            hist_indexed = sub.set_index("date_local")[metric].sort_index()
+
+    fig = go.Figure()
+
+    if not hist_indexed.empty:
+        fig.add_trace(go.Scatter(
+            x=hist_indexed.index,
+            y=hist_indexed.values,
+            mode="lines",
+            connectgaps=False,
+            line={"color": color_hist, "width": 2.2},
+            name=f"{name} (Daily observation/reanalysis)"
+        ))
+
+    # Forecast daily series (shown in red color line)
+    if fc_frame is not None and not fc_frame.empty and metric in fc_frame and "date_local" in fc_frame:
+        fc_dedup = fc_frame.sort_values("forecast_vintage").drop_duplicates("date_local", keep="last").sort_values("date_local")
+        fc_indexed = fc_dedup.set_index("date_local")[metric].sort_index()
+
+        # Connect to last historical point if available so there is no visual gap
+        if not hist_indexed.empty and not fc_indexed.empty:
+            last_hist_dt = hist_indexed.dropna().index.max()
+            if pd.notna(last_hist_dt) and last_hist_dt < fc_indexed.index.min():
+                last_val = hist_indexed.loc[last_hist_dt]
+                fc_indexed = pd.concat([pd.Series([last_val], index=[last_hist_dt]), fc_indexed])
+
+        if not fc_indexed.empty:
+            fig.add_trace(go.Scatter(
+                x=fc_indexed.index,
+                y=fc_indexed.values,
+                mode="lines",
+                connectgaps=False,
+                line={"color": color_fc, "width": 2.5},
+                name=f"{name} (Forecast in Red)"
+            ))
+
+    fig.update_layout(
+        title=label or name,
+        yaxis_title=unit,
+        xaxis_title=None,
+        height=340,
+        margin={"l": 10, "r": 10, "t": 45, "b": 10},
+        template="plotly_white",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1}
+    )
     st.plotly_chart(fig, **FULL_WIDTH)
 
 
@@ -352,55 +300,59 @@ def field_guide():
         st.link_button("Open-Meteo variable definitions", "https://open-meteo.com/en/docs/marine-weather-api")
 
 
-def colab_code(repo, revision):
-    source = (Path(__file__).parent / "data.py").read_text(encoding="utf-8")
-    suffix = f'''
-# Raw data comes from https://huggingface.co/datasets/{repo}/resolve/<commit>/...
-REPO = {repo!r}
-PINNED_REVISION = {revision!r}  # Set to None to capture the newest dataset commit.
-info = repo_info(REPO)
-if PINNED_REVISION:
-    # Query the pinned revision's file inventory instead of the changing main branch.
-    import urllib.parse
-    info = json.loads(http_bytes(f"https://huggingface.co/api/datasets/{{REPO}}/revision/{{PINNED_REVISION}}"))
-bundle = load_hf_bundle(info, REPO)
-df_all = build_daily(bundle, include_recent=False)
-coverage = coverage_by_year(df_all, bundle["sites"]["site_id"])
-assert bundle["sites"]["site_id"].nunique() == 16
-assert not df_all.duplicated(["site_id", "date_local"]).any()
-print("HF commit:", bundle["revision"])
-print(f"Loaded {{len(df_all):,}} merged harbour-days across {{df_all.site_id.nunique()}} sites")
-print("Missing weather/marine pairs:", int((~df_all.complete_pair).sum()))
-print("Entirely missing dates are counted in the coverage report, not filled with zero.")
-df_all.info()
-display(df_all.head())
-display(coverage.groupby("year")[["expected_days", "paired_days", "missing_pair_days"]].sum())
-df_all.to_parquet("sl_fisheries_daily_reanalysis.parquet", index=False, compression="snappy")
-coverage.to_csv("sl_fisheries_coverage.csv", index=False)
-# Optional: past provisional values, kept separate from df_all's ERA5 training baseline.
-# df_operational = build_daily(bundle, include_recent=True)
-# df_forecasts = build_forecasts(bundle)  # Separate forecast vintages, never train as realized weather.
+def colab_code(repo):
+    return f'''# 1. Install/upgrade huggingface_hub if needed (usually pre-installed in Colab)
+!pip install -q huggingface_hub pandas pyarrow
+from huggingface_hub import snapshot_download
+import pandas as pd
+import glob
+
+# 2. Fast parallel download of all shards directly from Hugging Face
+repo_id = "{repo}"
+folder = snapshot_download(
+    repo_id=repo_id,
+    repo_type="dataset",
+    allow_patterns=["data/weather_reanalysis/*", "data/marine_reanalysis/*", "metadata/sites.csv"]
+)
+
+# 3. Read and concatenate all historical atmospheric & marine years
+weather_files = sorted(glob.glob(f"{{folder}}/data/weather_reanalysis/*/*.parquet"))
+marine_files = sorted(glob.glob(f"{{folder}}/data/marine_reanalysis/*/*.parquet"))
+df_weather = pd.concat([pd.read_parquet(f) for f in weather_files], ignore_index=True)
+df_marine = pd.concat([pd.read_parquet(f) for f in marine_files], ignore_index=True)
+
+# 4. Join weather and marine data on (site_id, date_local)
+df_all = pd.merge(
+    df_weather,
+    df_marine.drop(columns=["model", "snapshot_id"], errors="ignore"),
+    on=["site_id", "date_local"],
+    how="inner"
+)
+
+# 5. Enrich with harbour metadata (coordinates, district, sector)
+df_sites = pd.read_csv(f"{{folder}}/metadata/sites.csv")
+metadata_cols = ["site_id", "name", "admin_district", "fisheries_district", "coastal_sector", "lat_land", "lon_land", "lat_sea", "lon_sea"]
+df_all = pd.merge(df_sites[metadata_cols], df_all, on="site_id", how="right")
+
+# 6. Sort chronologically by harbour and date
+df_all = df_all.sort_values(by=["site_id", "date_local"]).reset_index(drop=True)
+print(f"Loaded {{len(df_all):,}} total rows with {{len(df_all.columns)}} columns!")
+df_all.head()
+
+# Save as a single high-performance Parquet file (Optional):
+# df_all.to_parquet("sl_fisheries_weather_2010_to_present.parquet", index=False)
+# Or export as CSV:
+# df_all.to_csv("sl_fisheries_weather_2010_to_present.csv", index=False)
 '''
-    return "%pip install -q pandas==3.0.6 numpy==2.4.6 pyarrow==25.0.1 requests==2.34.2 tzdata==2026.5\n" + source + suffix
 
 
 def main():
-    with st.sidebar:
-        st.header("Observatory settings")
-        theme_mode = st.radio("Theme", ["Light", "Dark"], horizontal=True, key="theme_mode", index=0)
-        is_dark = (theme_mode == "Dark")
-        st.divider()
-
-    apply_theme_css(is_dark)
-    plotly_template = "plotly_dark" if is_dark else "plotly_white"
-
-    header_color = "#38bdf8" if is_dark else "#007F7A"
-    st.markdown(f"<p style='color:{header_color};letter-spacing:0.14em;font-size:0.8rem;font-weight:700'>SRI LANKA · 16 FISHERIES SITES</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#007F7A;letter-spacing:0.14em;font-size:0.8rem;font-weight:700'>SRI LANKA · 16 FISHERIES SITES</p>", unsafe_allow_html=True)
     st.title("Fisheries observatory")
     st.write("Explore coastal weather, offshore waves and documented fishery records.")
 
     with st.sidebar:
-        st.subheader("Data source")
+        st.header("Explore the coast")
         mode = st.selectbox("Data source", ["Live Hugging Face", "Synthetic demo"],
                             index=1 if os.getenv("DASHBOARD_DEFAULT_MODE") == "demo" else 0, key="data_mode")
         auto = st.toggle("Check for updates every 5 minutes", value=True)
@@ -554,13 +506,7 @@ def main():
                     st.session_state["focus_site"] = coastal_loc
                     st.session_state["_prev_focus_site"] = coastal_loc
 
-            map_mode = st.radio(
-                "Map layer display",
-                ["Combined (Heatmap + Markers)", "Location heatmap only", "Sampling markers only"],
-                horizontal=True,
-                key="coastal_map_layer_style"
-            )
-            render_map(sites, forecasts, history, target, wave, wind, is_dark=is_dark, layer_style=map_mode)
+            render_map(sites, forecasts, history, target, wave, wind)
 
         with right:
             st.subheader(names[focus])
@@ -600,6 +546,7 @@ def main():
     with tabs[1]:
         st.subheader(f"Daily and seasonal trends: {names[focus]}")
         part = history[history.site_id.eq(focus)].copy()
+        fc_part = forecasts[forecasts.site_id.eq(focus)].copy() if not forecasts.empty else pd.DataFrame()
         metric_labels = {f"{LABELS[x][0]} ({LABELS[x][1]})": x for x in WEATHER + MARINE}
         selected_label = st.selectbox("Variable", list(metric_labels.keys()), key="trend_variable")
         metric = metric_labels[selected_label]
@@ -607,22 +554,14 @@ def main():
         end = colombo_today() - pd.Timedelta(days=1)
         if period == "Last 30 days":
             start = end - pd.Timedelta(days=29)
-            plot_series(part[part.date_local.between(start, end)], metric, start, end, template=plotly_template)
+        elif period == "Last 12 months":
+            start = end - pd.DateOffset(years=1) + pd.Timedelta(days=1)
         else:
-            start = (end.replace(day=1) - pd.DateOffset(months=11)) if period == "Last 12 months" else part.date_local.min().replace(day=1)
-            if "direction" in metric:
-                # Circular monthly direction, no misleading 359°/1° arithmetic mean.
-                subset = part[part.date_local.between(start, end)].copy()
-                radians = np.deg2rad(subset[metric])
-                subset["_sin"], subset["_cos"] = np.sin(radians), np.cos(radians)
-                means = subset.set_index("date_local")[["_sin", "_cos"]].resample("MS").mean()
-                means[metric] = np.mod(np.rad2deg(np.arctan2(means._sin, means._cos)), 360)
-                means.loc[np.hypot(means._sin, means._cos) < 1e-6, metric] = np.nan
-                # Already aggregated; avoid a second non-circular reduction.
-                plot_series(means.reset_index(), metric, start, end.replace(day=1), monthly=True, label="Monthly circular mean direction", template=plotly_template)
-            else:
-                plot_series(part[part.date_local.between(start, end)], metric, start, end.replace(day=1), monthly=True, template=plotly_template)
-        st.caption("Absent dates remain gaps. Monthly rainfall is the sum of available days; other monthly values are means of available daily values. Check coverage before treating a partial month as complete.")
+            start = part.date_local.min() if not part.empty else end - pd.DateOffset(years=3)
+
+        plot_series(part, fc_part, metric, start, end)
+        st.caption("Plotting natural daily observations/reanalysis (teal) alongside 7-day model forecasts in red. Absent historical dates remain gaps.")
+
         st.markdown("**Fish groups and harbour catch records**")
         st.caption("Market names and broad groups below follow your project brief. Species identity, harbour occurrence, depth zones and a local seasonal calendar need verified fishery records; weather alone does not establish fish availability.")
         profiles = pd.DataFrame(SPECIES, columns=["local_market_name", "reference_group", "fish_category"])
@@ -644,14 +583,11 @@ def main():
         else:
             st.caption("SYNTHETIC catch examples" if demo else "Catch records supplied in this session; missing reporting days are not zero catch.")
             shares = harbour_catch.groupby("species", as_index=False).catch_weight_kg.sum()
-            bar_color = "#38bdf8" if is_dark else "#007F7A"
             bar_fig = px.bar(shares, x="species", y="catch_weight_kg", title="Catch weight in available records",
-                             color_discrete_sequence=[bar_color], template=plotly_template)
-            bar_fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                             color_discrete_sequence=["#007F7A"], template="plotly_white")
             st.plotly_chart(bar_fig, **FULL_WIDTH)
             monthly_c = harbour_catch.set_index("date_local").catch_weight_kg.resample("MS").sum(min_count=1).reset_index()
-            line_fig = px.line(monthly_c, x="date_local", y="catch_weight_kg", title="Recorded monthly catch (kg)", template=plotly_template)
-            line_fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            line_fig = px.line(monthly_c, x="date_local", y="catch_weight_kg", title="Recorded monthly catch (kg)", template="plotly_white")
             st.plotly_chart(line_fig, **FULL_WIDTH)
             seasonal = harbour_catch.assign(month=harbour_catch.date_local.dt.month, positive_catch=harbour_catch.catch_weight_kg.gt(0)).groupby(["species", "month"], as_index=False).agg(recorded_days=("date_local", "nunique"), positive_catch_days=("positive_catch", "sum"), mean_recorded_kg=("catch_weight_kg", "mean"))
             seasonal["positive_catch_pct_of_reported_days"] = (100 * seasonal.positive_catch_days / seasonal.recorded_days).round(1)
@@ -660,6 +596,36 @@ def main():
 
     with tabs[2]:
         st.subheader("Explore and export")
+
+        # Option to download the whole dataset at once with a button
+        st.markdown("#### ⚡ Download complete dataset at once")
+        st.caption(f"One-click download of the complete dataset across all 16 locations, covering full historical records up to the latest 7-day forecast ({len(combined_timeline):,} total rows).")
+        col_all1, col_all2, col_all3 = st.columns(3)
+        prefix = "SYNTHETIC_DEMO_" if demo else ""
+        for col, kind, mime, ext in zip([col_all1, col_all2, col_all3], ["CSV", "JSON", "Parquet"], ["text/csv", "application/json", "application/octet-stream"], ["csv", "json", "parquet"]):
+            data_fn = partial(export_bytes, combined_timeline, kind)
+            try:
+                col.download_button(
+                    f"Download entire dataset ({kind})",
+                    data=data_fn,
+                    file_name=f"{prefix}sl_fisheries_complete_dataset.{ext}",
+                    mime=mime,
+                    key=f"download_whole_dataset_{kind}",
+                    on_click="ignore",
+                    **FULL_WIDTH
+                )
+            except (TypeError, RuntimeError):
+                col.download_button(
+                    f"Download entire dataset ({kind})",
+                    data=data_fn(),
+                    file_name=f"{prefix}sl_fisheries_complete_dataset.{ext}",
+                    mime=mime,
+                    key=f"download_whole_dataset_{kind}",
+                    **FULL_WIDTH
+                )
+
+        st.divider()
+        st.markdown("#### 🔍 Custom filtered export")
         st.write("Customize your download by selecting coastal locations, desired data columns, and any time period spanning historical records up to current forecasts.")
 
         # Data product & timeline selector
@@ -773,12 +739,23 @@ def main():
 
     with tabs[3]:
         st.subheader("Unified Google Colab loader")
-        st.write("Load all historical years and both domains into one pandas DataFrame. The loader keeps both model names, flags unmatched domains and records the exact HF commit.")
-        code = colab_code(repo, None if demo else bundle["revision"] if len(bundle["revision"]) == 40 else None)
-        with st.expander("Copy this complete single Colab cell", expanded=True):
-            st.code(code, language="python")
-        st.download_button("Download Colab cell", code, "load_sl_fisheries_colab.py", mime="text/plain", on_click="ignore", **FULL_WIDTH)
-        st.caption("The Colab loader always reads real HF data; it does not export dashboard demo fixtures. Reanalysis values can be revised and were not necessarily available at a historical forecast date. Use forecast vintages available at each forecast origin for operational backtesting.")
+        st.markdown(
+            """To load the entire dataset as one single unified DataFrame (combining all years, all 16 harbours, atmospheric weather, marine oceanography, and site metadata) in Google Colab, copy and run this single code cell:"""
+        )
+        st.markdown("#### Google Colab Code Cell")
+        code = colab_code(repo)
+        st.code(code, language="python")
+
+        st.markdown("#### Saving as a Single File in Colab (Optional)")
+        st.markdown("If you want to save the entire merged table to your Colab session or Google Drive:")
+        st.code(
+            """# Save as a single high-performance Parquet file:
+df_all.to_parquet("sl_fisheries_weather_2010_to_present.parquet", index=False)
+# Or export as CSV:
+# df_all.to_csv("sl_fisheries_weather_2010_to_present.csv", index=False)""",
+            language="python",
+        )
+        st.download_button("Download Colab code (.py)", code, "load_sl_fisheries_unified.py", mime="text/plain", on_click="ignore", **FULL_WIDTH)
 
     st.divider()
     st.caption("Sources: Open-Meteo/ECMWF via the linked HF dataset. CC BY 4.0 weather attribution. Catch and ocean uploads retain their own provenance and licences.")

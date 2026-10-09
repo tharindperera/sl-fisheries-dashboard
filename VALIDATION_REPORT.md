@@ -21,8 +21,8 @@ The HF coverage and manifest JSON files in this captured revision remain empty. 
 
 ## Tests
 
-- 23 offline behavioral tests pass, covering demo reproducibility and isolation; source preference; unmatched domain retention; forecast vintages; leap years and missing years; invalid numbers, directions and duplicates; CSV connector contracts; source provenance; CSV/JSON/Parquet round trips; demo/live-error UI; failed-shard refresh-loop regression; empty severity filters; shared map/dropdown selection state; dark/light theme switching; coastal location dropdown selection; and combined historical-to-forecast timeline exports.
-- Streamlit AppTest also rendered the actual HF snapshot, changed the selected harbour, tested dark mode selection, selected forecast products and rendered circular monthly direction charts without exceptions.
+- 23 offline behavioral tests pass, covering demo reproducibility and isolation; source preference; unmatched domain retention; forecast vintages; leap years and missing years; invalid numbers, directions and duplicates; CSV connector contracts; source provenance; CSV/JSON/Parquet round trips; demo/live-error UI; failed-shard refresh-loop regression; empty severity filters; shared map/dropdown selection state; coastal location dropdown selection; 1-click whole dataset downloads; and combined historical-to-forecast timeline exports.
+- Streamlit AppTest also rendered the actual HF snapshot, changed the selected harbour, tested complete dataset downloads, selected forecast products and rendered daily trend charts with forecast lines without exceptions.
 - The complete generated Colab cell parsed successfully and executed on the real downloaded snapshot using mocked transport, yielding the same 67,072 historical site-days. The pinned HF revision inventory endpoint was also verified over real HTTP.
 - Python modules compile successfully. pip check reports no broken requirements.
 - Approximate retained memory for three joined real tables in the local test: 71.4 MB, before Streamlit cache/runtime and per-session overhead. Cache entries, download workers and export sizes are bounded; concurrent-user load testing remains deployment-specific.
@@ -40,3 +40,5 @@ The HF coverage and manifest JSON files in this captured revision remain empty. 
 ## Tested direct dependencies
 
 Python 3.12; Streamlit 1.65.0; pandas 3.0.6; NumPy 2.4.6; Plotly 7.1.0; Pydeck 0.9.3; PyArrow 25.0.1; requests 2.34.2; tzdata 2026.5; pytest 9.1.1 for development.
+
+

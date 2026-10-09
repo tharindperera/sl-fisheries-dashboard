@@ -21,8 +21,8 @@ The HF coverage and manifest JSON files in this captured revision remain empty. 
 
 ## Tests
 
-- 20 offline behavioral tests pass, covering demo reproducibility and isolation; source preference; unmatched domain retention; forecast vintages; leap years and missing years; invalid numbers, directions and duplicates; CSV connector contracts; source provenance; CSV/JSON/Parquet round trips; demo/live-error UI; failed-shard refresh-loop regression; empty severity filters; shared map/dropdown selection state.
-- Streamlit AppTest also rendered the actual HF snapshot, changed the selected harbour, selected forecast products and rendered circular monthly direction charts without exceptions.
+- 23 offline behavioral tests pass, covering demo reproducibility and isolation; source preference; unmatched domain retention; forecast vintages; leap years and missing years; invalid numbers, directions and duplicates; CSV connector contracts; source provenance; CSV/JSON/Parquet round trips; demo/live-error UI; failed-shard refresh-loop regression; empty severity filters; shared map/dropdown selection state; dark/light theme switching; coastal location dropdown selection; and combined historical-to-forecast timeline exports.
+- Streamlit AppTest also rendered the actual HF snapshot, changed the selected harbour, tested dark mode selection, selected forecast products and rendered circular monthly direction charts without exceptions.
 - The complete generated Colab cell parsed successfully and executed on the real downloaded snapshot using mocked transport, yielding the same 67,072 historical site-days. The pinned HF revision inventory endpoint was also verified over real HTTP.
 - Python modules compile successfully. pip check reports no broken requirements.
 - Approximate retained memory for three joined real tables in the local test: 71.4 MB, before Streamlit cache/runtime and per-session overhead. Cache entries, download workers and export sizes are bounded; concurrent-user load testing remains deployment-specific.

@@ -1,0 +1,8 @@
+streamlit==1.65.0
+pandas==3.0.6
+numpy==2.4.6
+plotly==7.1.0
+pydeck==0.9.3
+pyarrow==25.0.1
+requests==2.34.2
+tzdata==2026.5

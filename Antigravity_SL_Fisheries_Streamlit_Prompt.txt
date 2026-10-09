@@ -1,0 +1,94 @@
+Act as a senior Python and Streamlit developer. Build and finish a runnable Sri Lankan Fisheries Observatory for Streamlit Community Cloud. Deliver the code, tests and deployment documentation. Work in a separate dashboard directory/repository so the running data-ingestion workflows remain intact.
+
+Existing sources:
+GitHub pipeline: https://github.com/tharindperera/sl-fisheries-weather
+Public HF dataset: https://huggingface.co/datasets/tharinduperera/sl-fisheries-weather-daily
+HF owner: tharinduperera. GitHub owner: tharindperera. Preserve this spelling distinction.
+Recommended dashboard directory: D:\sl-fisheries-dashboard
+Recommended dashboard repository: tharindperera/sl-fisheries-dashboard
+
+Use the working project files supplied with this prompt as the starting implementation if available. Read the current repository and dataset schema before making changes. Do not merely print an accomplishment report; implement and test each requested path. Do not push or publish credentials, generated catch fixtures or local caches. Do not change the existing collection schedules or quota ledger as part of the dashboard.
+
+Authoritative locations
+======================
+Use exactly these 16 logical site IDs from metadata/sites.csv:
+dikkowita, beruwala, negombo, tangalle, mirissa, nilwella, kudawella, puranawella, puttalam, chilaw, kalpitiya, ambalangoda, galle, trincomalee, valaichchenai, myliddy.
+Puranawella refers to Dondra/Devinuwara; Trincomalee refers to the configured Cod Bay area. Puttalam is a coastal/lagoon area. Do not substitute the different illustrative harbour list in the dashboard brief. Read names, districts, sectors, both sampling points and registry versions from the dataset. A dataset coordinate is a selected model sampling point, not a certified harbour berth. Display the registry's verification status without independently claiming it is verified. Use the downloaded sample registry only for a clearly identified demo.
+
+Actual HF products
+==================
+data/weather_reanalysis/**/weather.parquet: model era5
+data/marine_reanalysis/**/marine.parquet: model era5_ocean
+data/weather_recent/**/weather.parquet: model ecmwf_ifs025
+data/marine_recent/**/marine.parquet: model ecmwf_wam
+data/weather_forecasts/**/weather.parquet: model ecmwf_ifs025
+data/marine_forecasts/**/marine.parquet: model ecmwf_wam
+metadata/sites.csv
+Read available year=YYYY or month=YYYY-MM partitions recursively; do not hard-code the latest year or completion claims.
+
+Primary keys in each raw domain: site_id, date_local, model, snapshot_id.
+Weather fields:
+precipitation_sum (mm), precipitation_hours (hours), wind_speed_10m_max (m/s), wind_speed_10m_mean (m/s), wind_direction_10m_dominant (degrees), temperature_2m_mean/max/min (Celsius), relative_humidity_2m_mean (%), pressure_msl_mean (hPa).
+Marine fields:
+wave_height_max (m), wave_period_max (seconds), wave_direction_dominant (degrees).
+
+Correct the following descriptions wherever they appear:
+- wind_speed_10m_max is daily maximum wind speed, not a gust measurement. Do not infer gusts from it.
+- wave_height_max is the daily maximum of modelled significant wave height, not the largest individual wave. The schema does not separately measure swell waves.
+- ERA5 is a model-based reanalysis assimilating observations. It is not directly measured ground truth at each harbour and is not universally the highest-accuracy source at that location.
+- Open-Meteo's ERA5 archive has a publication delay. Do not call its values finalized solely because they were downloaded, and do not invent a source availability timestamp that is absent.
+- Forecast days include the current day. A seven-day horizon is today through today+6.
+- Daily aggregates are not instantaneous real-time readings. Label every card with its local date, product, model and forecast vintage when present.
+
+Read-only architecture and refresh
+==================================
+Provide app.py, data.py, demo.py, sample_sites.csv, pinned requirements.txt, requirements-dev.txt, .streamlit/config.toml, .gitignore, README.md, tests, a runnable Colab notebook and a validation report.
+The app reads HF only; it never calls Open-Meteo from a browser session and never writes data back to HF. This avoids bypassing the collection pipeline's shared quota policy.
+Use the public HF API to capture an immutable commit, then read all requested raw resolve URLs or snapshot_download files at that same commit. Validate the file inventory and site catalogue. Timeouts and bounded retry/backoff are required. Handle source errors visibly.
+Use st.cache_data with both TTL and max_entries, partitioned/column-aware reads, a bounded number of download workers and export limits. Do not prebuild CSV, JSON and Parquet bytes simultaneously for the full dataset. Generate bytes on demand.
+Use a real automatic rerun mechanism such as st.fragment(run_every="5m") to poll for a new HF commit while a session is active. Cache TTL alone is not an automatic refresh mechanism. Provide manual refresh, last-read time, dataset revision and latest covered date. Reuse existing data when the commit has not changed. Explain that ingestion remains the GitHub Actions responsibility and a sleeping Streamlit app is not a background scheduler.
+
+Data contracts and joins
+=======================
+Validate exactly 16 unique configured site IDs, required columns and types, finite numeric values, nonnegative precipitation/wind/wave values, direction bounds, daily dates, physical checks and full-key uniqueness.
+For the past daily table, select one weather and one marine row independently per site/date, using complete available reanalysis in preference to recent estimates. Keep weather_model, marine_model, weather_snapshot_id, marine_snapshot_id, both product names, missing-domain flags and the HF revision.
+Use an outer join with validate="one_to_one" after the domain selection. Validate metadata with many_to_one. Do not drop marine model/snapshot columns or use an unchecked inner join that hides missing data. Never merge multiple forecast vintages into a site/date table and create a Cartesian multiplication.
+Offer reanalysis-only history, preferred past values with provisional flags, and a separate forecast-vintage explorer. Preserve all available forecast vintages. Keep today's/future forecasts out of the historical training table. If the source has only date-level snapshots, state that exact model issue times and multiple intraday vintages cannot be reconstructed from those files.
+Calculate coverage from actual rows against every expected local date/site in Asia/Colombo, including entirely missing years and unequal per-site tails. Distinguish raw domain/vintage records from merged harbour-days. Never claim a year is complete from its maximum date or row count alone.
+Missing days remain missing, not zero. Time-series charts must include gaps rather than visually connect across missing years. Use circular averaging for directions. Sum rainfall through time for monthly precipitation; label other reductions precisely and flag incomplete months. Do not sum rainfall across harbours as if it were one location.
+
+Missing ocean and fishery domains
+================================
+The current HF schema does not include SST, chlorophyll-a, salinity, ocean-current speed, species, catches or a verified seasonal/depth catalogue. Show "Not available" in live mode unless documented sources are connected. Do not silently generate these values alongside real HF rows.
+Provide validated optional session-local CSV connectors and empty downloadable templates:
+Ocean: site_id,date_local,sea_surface_temperature,chlorophyll_a,salinity,current_speed,measurement_kind,source,source_url. Units: Celsius, mg/m3, PSU and m/s. One row per site/day, with a clearly identified observation/model/satellite basis. At least one supported ocean variable is required.
+Catch: site_id,date_local,species,fish_category,catch_weight_kg,source,source_url. One aggregated row per site/date/species. Categories: small_pelagic, large_pelagic, demersal, other. Missing catch is not zero catch. Preserve catch's own grain so a join cannot multiply weights.
+Fish names in the brief are regional market labels: salaya, hurulla, handalla, kumbala, kelawalla, balaya, thalapath, thora. Do not invent scientific identifications, harbour-specific presence, depths or SST thresholds. Support a documented species-profile catalogue when the user supplies one. Mark unverified depth/season information as unknown. Show catch shares, monthly recorded totals and positive-catch share among explicitly reported species-days when data is available. Do not interpret incomplete landings samples as ecological absence or a universal seasonal probability.
+Adding new upstream ocean fields later belongs in the ingestion pipeline under its quota and provenance rules. Chlorophyll and salinity require their own suitable source. A weather-only dashboard cannot infer fish abundance.
+
+Demo mode
+=========
+Generate deterministic synthetic data for the same 16 sites with plausible values, seasonal variation and separate historical/recent/forecast example products. Include ocean/catch fixtures only inside this isolated mode. The whole mode displays a prominent SYNTHETIC DEMO banner and marks every frame/export with is_synthetic or an equivalent explicit source field and filename prefix.
+If live HF is unreachable, explain the error and activate the isolated fallback, retaining the option to retry. Never blend synthetic rows into real-data history or publish them. The Colab loader must always read real HF data, even when the dashboard itself is in demo mode.
+
+Interface
+=========
+Build a clean, responsive, accessible coastal research dashboard with a restrained teal/navy/light theme. No fabricated operational status, invented data or unsupported safety conclusions.
+1. Overview and field guide: dynamic volume and coverage KPIs, data freshness, dictionary with columns/units/model methods, practical plain-language descriptions and technical provenance.
+2. Interactive Sri Lanka map: Pydeck or Folium with all 16 land/offshore point pairs, clear legend and pickable markers. Map clicks and the harbour dropdown update the same detail state. Colour reflects model-value display thresholds for the selected day, never claimed port operation status.
+3. Harbour detail: date-labelled wind, waves, precipitation, temperature and pressure; optional ocean fields; fish reference profiles and documented catch statistics. Plotly views for 30 daily days, 12 monthly months and multi-year history, including monsoon/seasonal exploration without asserting unsupported causal relationships.
+4. Explorer: harbour/date/product filters, category filters explicitly applying to catch records, weather-value severity filters, paginated st.dataframe and CSV/JSON/Snappy Parquet exports. Include empty-state handling and optional connector validation errors.
+5. Coverage and Colab: a site/year completeness heatmap and per-year/per-site report; a complete copyable Colab cell and downloadable notebook. Pin the displayed HF revision by default, allow explicitly loading latest, preserve model provenance and missing-domain flags, print df.info(), df.head(), site count, key uniqueness and coverage, then save a merged historical Parquet and coverage CSV.
+
+Sea-condition communication
+===========================
+Display plain-language wind/wave model indicators and their thresholds. Distinguish them from official alerts. Do not use a green "safe to sail" card or boat-launch permission based on these daily grid values. Link to the Sri Lanka Department of Meteorology at https://meteo.gov.lk/ for official marine forecasts. If official alerts are not ingested, show that status clearly. Do not scrape or interpret a stale PDF as a current advisory. Explain significant waves and data age without blocking ordinary research use.
+
+Verification and deployment
+===========================
+Use meaningful offline tests for deterministic demo isolation, strict validation, preference for reanalysis, separate forecast vintages, unmatched domain preservation, leap-year/absent-year coverage, unknown sites, optional CSV contracts and all export formats. Test the app using streamlit.testing.v1.AppTest in demo and real-snapshot modes, changing harbour/product/date filters. Validate a small real HF load and the complete Colab cell. Do not publish test data.
+Document actual package versions, captured commit, raw and merged row counts, verified coverage and any data fields still absent. Never claim deployment occurred unless a working Community Cloud URL exists.
+Provide Windows commands to create a venv, install dependencies and run streamlit run app.py. Guide the user through a separate GitHub repository, then share.streamlit.io -> Create app -> existing app -> repository/branch/main/app.py -> Advanced settings Python 3.12 -> Deploy. Public HF access requires no write token. Explain later read-only secrets only if an explicitly connected private provider needs them. Never reuse the pipeline's write token for the public dashboard.
+Keep the deployment files self-contained in the dashboard repository. If integrating into the existing pipeline repository instead, use dashboard/app.py and dashboard/requirements.txt, with no root dependency/workflow changes.
+
+Finish with the implemented files, executed test results, concrete missing-data limitations and the short deployment procedure. Do not leave placeholder functions while calling the application production-ready.
